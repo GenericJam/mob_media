@@ -1,0 +1,92 @@
+name: tests
+
+# CI for the plugin's host-side Elixir surface — the same gate mob core runs —
+# plus compile checks of the native code, which only the host app's native
+# build would otherwise compile. Device behaviour is proven by
+# `mix mob.selftest` and the demo screen on a device (see AGENTS.md).
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }}
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - elixir: '1.19'
+            otp: '28'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
+
+      - name: Cache deps + _build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
+          restore-keys: mix-${{ runner.os }}-${{ matrix.elixir }}-${{ matrix.otp }}-
+
+      - run: mix deps.get
+      - run: mix deps.compile
+      - run: mix compile --warnings-as-errors
+
+      - name: Format check
+        run: mix format --check-formatted
+
+      - name: Credo (strict)
+        run: mix credo --strict
+
+      - name: Tests
+        run: mix test
+
+  native-android:
+    name: Android NIF + Kotlin bridge compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '28'
+      - name: clang -fsyntax-only (jni.h from the runner's JDK)
+        run: |
+          erl_inc="$(erl -noshell -eval 'io:format("~s/usr/include", [code:root_dir()]), halt().')"
+          clang -fsyntax-only -Wall -Wextra -Werror \
+            -I"$erl_inc" -I"$JAVA_HOME/include" -I"$JAVA_HOME/include/linux" \
+            priv/native/jni/mob_media_nif.c
+      - name: kotlinc against android.jar
+        run: |
+          jar="$(ls -d "$ANDROID_SDK_ROOT"/platforms/android-*/android.jar | sort -V | tail -1)"
+          echo "android.jar: $jar"
+          kotlinc -Werror -cp "$jar" -d "$RUNNER_TEMP/kt" priv/native/android/MobMediaBridge.kt
+
+  native-ios:
+    name: iOS NIF compiles
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Erlang (for erl_nif.h)
+        run: brew install erlang
+      - name: clang -fsyntax-only (Objective-C, ARC) against the iOS simulator SDK
+        run: |
+          erl_inc="$(erl -noshell -eval 'io:format("~s/usr/include", [code:root_dir()]), halt().')"
+          xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator \
+            -fobjc-arc -fmodules -fsyntax-only -Wall -Wextra -Werror -I"$erl_inc" \
+            priv/native/ios/mob_media_nif.m
