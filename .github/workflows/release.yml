@@ -1,0 +1,181 @@
+name: release
+
+# mix.exs is the source of truth for the version. Bump `version: "X.Y.Z"`,
+# commit, push: this workflow tags it, creates the GitHub Release, signs the
+# plugin and publishes it to Hex. Re-run from the Actions tab
+# (workflow_dispatch) to finish a release that stopped part way: each step
+# skips what is already done (tag, release, version on Hex).
+#
+# Repository secrets (Settings → Secrets and variables → Actions):
+#   HEX_API_KEY          — `mix hex.user key generate`
+#   MOB_PLUGIN_SIGN_KEY  — the exact contents of ~/.mob/keys/<app>.priv
+#                          written by `mix mob.plugin.keygen` (one line,
+#                          base64 of the raw 32-byte Ed25519 private key)
+on:
+  push:
+    branches: [main, master]
+    paths: ['mix.exs']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # create the GitHub Release and push the tag
+
+jobs:
+  release:
+    name: Release from mix.exs
+    runs-on: ubuntu-latest
+    env:
+      HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+      MOB_PLUGIN_SIGN_KEY: ${{ secrets.MOB_PLUGIN_SIGN_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity (for the tag push)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Read version and package name from mix.exs
+        id: version
+        run: |
+          version=$(grep -E '^\s*version:\s*"' mix.exs | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+          if [ -z "$version" ]; then
+            version=$(grep -E '^\s*@version\s+"' mix.exs | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+          fi
+          pkg=$(grep -E '^\s*app:\s*:' mix.exs | head -1 | sed 's/.*app:\s*:\([a-z_][a-z0-9_]*\).*/\1/')
+          if [ -z "$version" ] || [ -z "$pkg" ]; then
+            echo "::error::Could not read version / app from mix.exs"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "package=$pkg" >> "$GITHUB_OUTPUT"
+          echo "Detected $pkg $version"
+
+      - name: Create + push tag (if missing)
+        run: |
+          tag="${{ steps.version.outputs.version }}"
+          if git rev-parse "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::notice::Tag $tag already exists — skipping"
+          else
+            git tag "$tag"
+            git push origin "$tag"
+          fi
+
+      - name: Check if GitHub Release exists
+        id: release_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ steps.version.outputs.version }}"
+          if gh release view "$tag" -R "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::GitHub Release $tag already exists — skipping"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract CHANGELOG section
+        if: steps.release_check.outputs.exists == 'false'
+        id: changelog
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            awk -v tag="${{ steps.version.outputs.version }}" '
+              $0 ~ "^## \\[" tag "\\]" || $0 ~ "^## " tag "( |$)" { in_section=1; next }
+              in_section && /^## / { exit }
+              in_section { print }
+            ' CHANGELOG.md > /tmp/release-body.md
+          fi
+          if [ -s /tmp/release-body.md ]; then
+            echo "has_body=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_body=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        if: steps.release_check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version }}
+          body_path: ${{ steps.changelog.outputs.has_body == 'true' && '/tmp/release-body.md' || '' }}
+          generate_release_notes: ${{ steps.changelog.outputs.has_body != 'true' }}
+
+      - name: Set up BEAM
+        if: env.HEX_API_KEY != ''
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.19'
+          otp-version: '28'
+
+      - name: Check if version is already on Hex
+        if: env.HEX_API_KEY != ''
+        id: hex_check
+        run: |
+          pkg="${{ steps.version.outputs.package }}"
+          vsn="${{ steps.version.outputs.version }}"
+          if mix hex.info "$pkg" "$vsn" 2>/dev/null | grep -q "Config:"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$pkg $vsn is already on Hex — skipping publish"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Require a real @source_url in mix.exs
+        if: env.HEX_API_KEY != '' && steps.hex_check.outputs.exists == 'false'
+        run: |
+          if grep -q 'github.com/OWNER/' mix.exs; then
+            echo "::error::mix.exs still has the scaffold's @source_url (github.com/OWNER/...). Set it to this repository: https://github.com/${{ github.repository }}"
+            exit 1
+          fi
+
+      # Hosts refuse an unsigned plugin, so never publish one.
+      - name: Require the signing key
+        if: env.HEX_API_KEY != '' && steps.hex_check.outputs.exists == 'false' && env.MOB_PLUGIN_SIGN_KEY == ''
+        run: |
+          echo "::error::MOB_PLUGIN_SIGN_KEY is not set: refusing to publish an unsigned plugin. Set it to the contents of ~/.mob/keys/${{ steps.version.outputs.package }}.priv (from mix mob.plugin.keygen)."
+          exit 1
+
+      # A wrong secret would publish a signature no host can verify against
+      # the committed public key.
+      - name: Verify the signing key matches priv/mob_plugin.pub
+        if: env.HEX_API_KEY != '' && steps.hex_check.outputs.exists == 'false'
+        run: |
+          elixir -e '
+            priv = System.fetch_env!("MOB_PLUGIN_SIGN_KEY") |> String.trim() |> Base.decode64!()
+            {pub, _} = :crypto.generate_key(:eddsa, :ed25519, priv)
+            committed = "priv/mob_plugin.pub" |> File.read!() |> String.trim() |> Base.decode64!()
+            if pub != committed do
+              IO.puts(:stderr, "::error::MOB_PLUGIN_SIGN_KEY does not derive the committed priv/mob_plugin.pub. Refusing to publish.")
+              System.halt(1)
+            end
+            IO.puts("signing key matches priv/mob_plugin.pub")
+          '
+
+      - name: Validate, then sign what ships
+        if: env.HEX_API_KEY != '' && steps.hex_check.outputs.exists == 'false'
+        run: |
+          pkg="${{ steps.version.outputs.package }}"
+          mix deps.get
+          mix mob.validate_plugin
+          mkdir -p ~/.mob/keys
+          printf '%s' "$MOB_PLUGIN_SIGN_KEY" > ~/.mob/keys/"$pkg".priv
+          chmod 600 ~/.mob/keys/"$pkg".priv
+          mix mob.plugin.sign
+          rm -f ~/.mob/keys/"$pkg".priv
+
+      - name: mix hex.publish
+        if: env.HEX_API_KEY != '' && steps.hex_check.outputs.exists == 'false'
+        run: mix hex.publish --yes
+
+      - name: Skip Hex publish notice (no API key)
+        if: env.HEX_API_KEY == ''
+        run: |
+          echo "::notice::HEX_API_KEY is not set; skipping the Hex publish. Add it at"
+          echo "::notice::https://github.com/${{ github.repository }}/settings/secrets/actions"
+          echo "::notice::and re-run this workflow (Actions tab → Run workflow)."
