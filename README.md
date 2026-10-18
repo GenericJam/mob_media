@@ -97,11 +97,9 @@ linear upsampling, channel averaging); iOS uses Core Audio's converter.
 
 ## Installation
 
-Not on Hex yet; pin the GitHub commit:
-
 ```elixir
 # mix.exs
-{:mob_media, github: "GenericJam/mob_media", ref: "<commit>"}
+{:mob_media, "~> 0.1"}
 ```
 
 ```elixir
@@ -114,12 +112,14 @@ config :mob, :trusted_plugins, %{
 }
 ```
 
-That's the shared first-party mob key. A GitHub checkout has no signature
-(`priv/mob_plugin.sig` is made by the release workflow), so until the Hex
-release sign it once in the dep: `cd deps/mob_media && mix mob.plugin.sign`
-with the first-party key in `~/.mob/keys/mob_media.priv`, or acknowledge it
-as unsigned with `config :mob, :acknowledge_unsafe_plugins, [:mob_media]`.
-Then `mix mob.deploy --native`.
+That's the shared first-party mob key. The Hex package carries
+`priv/mob_plugin.sig`, signed with it by the release workflow, so the
+native build accepts the plugin once it's trusted; no
+`acknowledge_unsafe_plugins`. Then `mix mob.deploy --native`.
+
+A GitHub checkout (`github: "GenericJam/mob_media"`) has no signature: sign it
+once in the dep (`cd deps/mob_media && mix mob.plugin.sign` with the
+first-party key in `~/.mob/keys/mob_media.priv`).
 
 ## Testing without a device
 

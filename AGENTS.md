@@ -85,8 +85,13 @@ mix mob.validate_plugin
 
 ## Release
 
-Not released. Version bumps and Hex publishes need Kevin's approval. When
-it's released, add the first-party `release.yml` (as in `mob_whisper`), set
-the `HEX_API_KEY` and `MOB_PLUGIN_SIGN_KEY` secrets (the shared first-party
-key; `priv/mob_plugin.pub` is its public half), add a `## [x.y.z]` section to
-`CHANGELOG.md` and bump `@version`. Never commit `priv/mob_plugin.sig`.
+Version bumps and Hex publishes need Kevin's approval. `.github/workflows/release.yml`
+(mob_dev's plugin scaffold workflow) publishes on any push to master that
+changes `mix.exs`: it tags `<version>`, creates the GitHub Release from the
+CHANGELOG section, and, unless the version is on Hex, checks that
+`MOB_PLUGIN_SIGN_KEY` (the shared first-party key; `priv/mob_plugin.pub` is its
+public half, fingerprint `ed25519:nc56w+1Kx0gIt/4EkHxnMZCKHMzp4+S5kS/HoSzEZkg=`)
+derives the committed public key, validates, signs and runs
+`mix hex.publish`. It needs the `HEX_API_KEY` and `MOB_PLUGIN_SIGN_KEY`
+secrets. To release: move `[Unreleased]` to `## [x.y.z] - date` and bump
+`@version` in the same commit. Never commit `priv/mob_plugin.sig`.

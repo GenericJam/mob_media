@@ -8,6 +8,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-18
+
 ### Added
 - `MobMedia.info/2`: duration, shown video size (rotation applied), which
   tracks a file has, and its MIME type. Android `MediaExtractor` +
