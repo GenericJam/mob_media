@@ -44,7 +44,7 @@ mob_camera or `Mob.Audio`), not a `content://` URI.
 
 Errors: `:not_found`, `:unsupported`, `:no_audio`, `:no_video`,
 `:decode_failed`, `:io_error`, `:timeout`, `:unavailable` (the NIF isn't in
-this build), and on Android `{:jni, reason}`.
+this build), and the NIF failing to queue the job: `{:jni, reason}` on Android, `:alloc` on iOS.
 
 ### Sync, off the schedulers
 

@@ -127,9 +127,9 @@ defmodule MobMedia do
 
   `width`/`height` are the size the video is **shown** at: a portrait phone
   video recorded as 1920x1080 with a 90° rotation reports 1080x1920, the same
-  orientation `frame/3` returns. `mime` is the container type as the platform
-  reports it (common aliases folded: `audio/x-wav` is `audio/wav`,
-  `audio/x-m4a` is `audio/mp4`), or `nil`.
+  orientation `frame/3` returns. `mime` is the container type (Android reads
+  the container; iOS goes by the file name's extension) with common aliases folded: `audio/x-wav` is `audio/wav`,
+  `audio/x-m4a` is `audio/mp4`; `nil` when unknown.
 
   Options: `:timeout` (ms, default `:infinity`).
   """
@@ -157,7 +157,8 @@ defmodule MobMedia do
 
   `{:error, :no_audio}` when the file has no audio track. The PCM covers the
   whole track: its length (`MobMedia.PCM.duration_ms/3`) matches the duration
-  within a few tens of milliseconds (codec priming and padding).
+  within a few tens of milliseconds, except AAC files, whose container
+  duration includes encoder priming and padding (about 130 ms longer).
   """
   @spec audio_pcm(Path.t(), keyword()) :: {:ok, binary() | Path.t()} | {:error, reason()}
   def audio_pcm(path, opts \\ []) when is_binary(path) and is_list(opts) do
@@ -176,7 +177,8 @@ defmodule MobMedia do
 
   The frame is the one shown at that time (exact, not the nearest keyframe),
   upright (the video's rotation applied), scaled down so neither side exceeds
-  `:max_px`. A time past the end gives the last frame.
+  `:max_px`. A time past the end gives the last frame; if the platform can't
+  decode the exact frame there, the nearest earlier keyframe.
 
   Options:
 
@@ -191,7 +193,7 @@ defmodule MobMedia do
   def frame(path, at_ms, opts \\ [])
       when is_binary(path) and is_integer(at_ms) and at_ms >= 0 and is_list(opts) do
     max_px =
-      opt!(opts, :max_px, @default_max_px, &(is_nil(&1) or (is_integer(&1) and &1 > 0)))
+      opt!(opts, :max_px, @default_max_px, &(is_nil(&1) or &1 in 1..0x7FFF_FFFF))
 
     quality = opt!(opts, :quality, @default_quality, &(is_integer(&1) and &1 in 1..100))
 
