@@ -117,9 +117,11 @@ That's the shared first-party mob key. The Hex package carries
 native build accepts the plugin once it's trusted; no
 `acknowledge_unsafe_plugins`. Then `mix mob.deploy --native`.
 
-A GitHub checkout (`github: "GenericJam/mob_media"`) has no signature: sign it
-once in the dep (`cd deps/mob_media && mix mob.plugin.sign` with the
-first-party key in `~/.mob/keys/mob_media.priv`).
+A GitHub checkout (`github: "GenericJam/mob_media"`) has no signature. The
+maintainer signs it once in the dep (`cd deps/mob_media && mix
+mob.plugin.sign` with the first-party key in `~/.mob/keys/mob_media.priv`);
+anyone else acknowledges it as unsigned with
+`config :mob, :acknowledge_unsafe_plugins, [:mob_media]`.
 
 ## Testing without a device
 

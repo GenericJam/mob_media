@@ -18,7 +18,9 @@ defmodule MobMedia.MixProject do
       package: package(),
       docs: [
         main: "readme",
-        extras: ["README.md", "CHANGELOG.md"]
+        extras: ["README.md", "CHANGELOG.md"],
+        # The release workflow tags the version without a `v`.
+        source_ref: @version
       ],
       source_url: @source_url
     ]
