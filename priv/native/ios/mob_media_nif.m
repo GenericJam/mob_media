@@ -7,7 +7,7 @@
  *   audio_pcm(Ref, Path, Out, Rate, Channels)     -> ok
  *   frame(Ref, Path, Out, AtMs, MaxPx, Quality)   -> ok
  *
- * Each NIF only queues a block on a background GCD queue (at most two run at
+ * Each NIF only queues a block on an NSOperationQueue (at most two run at
  * once) and returns; the block sends exactly one message to the caller:
  *   {mob_media, Ref, {ok, {DurationMs, Width, Height, HasAudio, HasVideo, Mime}}}
  *   {mob_media, Ref, {ok, Bytes}}            (audio_pcm: s16le bytes written to Out)
@@ -351,19 +351,22 @@ static void mm_frame(mm_job *job, NSString *path, NSString *out, long long at_ms
 
 /* ── NIFs (called on a BEAM scheduler; they only queue the job) ────────── */
 
+/* At most two jobs at once, and queued jobs wait in the operation queue,
+ * not on a blocked GCD worker thread each. */
 static void mm_queue(void (^work)(void)) {
-    static dispatch_semaphore_t slots;
+    static NSOperationQueue *queue;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-      slots = dispatch_semaphore_create(2);
+      queue = [[NSOperationQueue alloc] init];
+      queue.name = @"mob_media";
+      queue.maxConcurrentOperationCount = 2;
+      queue.qualityOfService = NSQualityOfServiceUtility;
     });
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-      dispatch_semaphore_wait(slots, DISPATCH_TIME_FOREVER);
+    [queue addOperationWithBlock:^{
       @autoreleasepool {
           work();
       }
-      dispatch_semaphore_signal(slots);
-    });
+    }];
 }
 
 static mm_job *mm_job_new(ErlNifEnv *env, ERL_NIF_TERM ref) {

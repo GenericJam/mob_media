@@ -8,7 +8,7 @@ defmodule MobMedia.Engine.Native do
       PCM (downmixed and resampled in Kotlin, the same algorithm as
       `MobMedia.PCM`), `MediaExtractor` + `MediaMetadataRetriever` for info,
       `MediaMetadataRetriever.getScaledFrameAtTime` for frames.
-    * iOS: the Objective-C NIF runs each job on a GCD queue:
+    * iOS: the Objective-C NIF runs each job on an `NSOperationQueue` (two at a time):
       `AVAssetReader` with LinearPCM output settings at the requested rate
       and channels (Core Audio does the conversion), `AVAssetImageGenerator`
       for frames, `AVURLAsset` for info.

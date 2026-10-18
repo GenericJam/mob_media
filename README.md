@@ -50,7 +50,7 @@ this build), and on Android `{:jni, reason}`.
 
 Every function blocks **the calling process** until its answer is ready. The
 NIF only queues the job and returns; the work runs on a native thread (a
-two-thread Kotlin pool on Android, a GCD queue limited to two jobs on iOS)
+two-thread Kotlin pool on Android, an operation queue running two jobs at a time on iOS)
 and the result comes back as a `{:mob_media, ref, result}` message to a
 short-lived worker process that each call starts. No BEAM scheduler, normal
 or dirty, is held while a file decodes.

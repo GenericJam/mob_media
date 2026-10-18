@@ -26,8 +26,8 @@ Android and iOS. Three questions shaped it.
 ## Decision
 
 * The NIF only queues the job and returns. The work runs on native threads
-  (a two-thread Kotlin pool on Android; GCD limited to two concurrent jobs on
-  iOS) and replies with exactly one `{:mob_media, ref, result}` message.
+  (a two-thread Kotlin pool on Android; an `NSOperationQueue` running two at a
+  time on iOS) and replies with exactly one `{:mob_media, ref, result}` message.
 * The native side **always writes its output to a file** whose path Elixir
   chose, streaming as it decodes, and sends only a small result (bytes
   written, frame size). Elixir reads the file into a binary, or renames it

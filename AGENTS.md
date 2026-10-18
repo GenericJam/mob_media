@@ -34,7 +34,8 @@ activation and self-tests. Decisions are in `decisions/`.
 * `priv/native/jni/mob_media_nif.c` — Android NIF: queues a job on the
   Kotlin bridge; `nativeDeliver*` thunks build the message.
 * `priv/native/android/MobMediaBridge.kt` — Android work, two-thread pool.
-* `priv/native/ios/mob_media_nif.m` — iOS NIF and work (GCD, max two jobs).
+* `priv/native/ios/mob_media_nif.m` — iOS NIF and work (an `NSOperationQueue`,
+  two jobs at a time).
 
 ## The contract (four places, change together)
 

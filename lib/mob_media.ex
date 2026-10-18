@@ -24,7 +24,7 @@ defmodule MobMedia do
 
   Every function blocks **the calling process** until the answer is ready and
   returns it. The work itself runs on a native thread (a Kotlin thread pool on
-  Android, a GCD queue on iOS); the NIF only queues it and returns, and the
+  Android, an operation queue on iOS); the NIF only queues it and returns, and the
   native side sends the result back as a message. No BEAM scheduler, normal or
   dirty, is held while a file decodes.
 
